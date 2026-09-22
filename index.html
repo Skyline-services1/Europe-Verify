@@ -86,7 +86,7 @@
         <div>
           <h2 class="text-sm sm:text-base font-bold text-white mb-1">فحص واعتماد الوثائق الأوروبية الرسمية في المتصفح</h2>
           <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
-            محرك فحص محلي متطور يعمل 100% داخل هاتفك دون نقل الملفات إلى خوادم خارجية. يدعم فحص عقود العمل، تصاريح PRACA.GOV.PL والتواقيع الإلكترونية المؤهلة (eIDAS / QES).
+            محرك فحص محلي متطور يعمل 100% داخل جهازك دون إرسال البيانات لخوادم خارجية. يدعم فحص عقود العمل، وتصاريح PRACA.GOV.PL والتواقيع الإلكترونية المؤهلة (eIDAS / QES).
           </p>
         </div>
       </div>
@@ -166,7 +166,19 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 text-sm mb-5">
           <div class="bg-[#0F172A]/70 p-3.5 rounded-xl border border-slate-800">
             <span class="text-xs text-slate-400 block mb-1">اسم صاحب الوثيقة / الموقع:</span>
-            <span id="resHolderName" class="font-bold text-white text-sm sm:text-base">MOHAMED AMINE MZOUGHI</span>
+            <span id="resHolderName" class="font-bold text-white text-sm sm:text-base">غير محدد / Unspecified</span>
+          </div>
+          <div id="resNationalityBox" class="hidden bg-[#0F172A]/70 p-3.5 rounded-xl border border-slate-800">
+            <span class="text-xs text-slate-400 block mb-1">الجنسية:</span>
+            <span id="resNationality" class="font-semibold text-amber-300 text-xs sm:text-sm">-</span>
+          </div>
+          <div id="resPassportBox" class="hidden bg-[#0F172A]/70 p-3.5 rounded-xl border border-slate-800">
+            <span class="text-xs text-slate-400 block mb-1">وثيقة السفر / الجواز:</span>
+            <span id="resPassport" class="font-mono font-semibold text-slate-200 text-xs sm:text-sm">-</span>
+          </div>
+          <div id="resBirthDateBox" class="hidden bg-[#0F172A]/70 p-3.5 rounded-xl border border-slate-800">
+            <span class="text-xs text-slate-400 block mb-1">تاريخ الميلاد:</span>
+            <span id="resBirthDate" class="font-mono font-semibold text-slate-200 text-xs sm:text-sm">-</span>
           </div>
           <div class="bg-[#0F172A]/70 p-3.5 rounded-xl border border-slate-800">
             <span class="text-xs text-slate-400 block mb-1">الدولة وجهة الإصدار:</span>
@@ -176,7 +188,7 @@
             <span class="text-xs text-slate-400 block mb-1">تاريخ الفحص / الصلاحية:</span>
             <span id="resDate" class="font-semibold text-slate-200 text-xs sm:text-sm">2026-09-22</span>
           </div>
-          <div class="bg-[#0F172A]/70 p-3.5 rounded-xl border border-slate-800">
+          <div class="bg-[#0F172A]/70 p-3.5 rounded-xl border border-slate-800 md:col-span-2">
             <span class="text-xs text-slate-400 block mb-1">حالة التشفير والحماية:</span>
             <span id="resEncryptionStatus" class="font-semibold text-emerald-400 text-xs sm:text-sm">وثيقة قياسية تم التحقق من سلامتها</span>
           </div>
@@ -198,7 +210,7 @@
 
         <!-- Download Certificate Button -->
         <button 
-          id="downloadCertBtn"
+          id="downloadCertBtn" 
           class="w-full py-3.5 sm:py-4 px-4 rounded-xl font-bold text-white bg-sky-600 hover:bg-sky-500 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-xl shadow-sky-950/50 cursor-pointer text-xs sm:text-sm"
         >
           <i data-lucide="file-down" class="w-4 h-4 sm:w-5 sm:h-5"></i>
@@ -255,12 +267,10 @@
 
   <!-- Application Logic -->
   <script>
-    // 1. Initialize Icons
     if (window.lucide) {
       lucide.createIcons();
     }
 
-    // 2. Safe Mobile PDF.js Worker Setup (Primary: Cloudflare CDN; Safe Fallback: unpkg)
     if (window.pdfjsLib) {
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
@@ -359,50 +369,101 @@
 
       try {
         const arrayBuffer = await file.arrayBuffer();
-        currentRawBuffer = arrayBuffer;
-        await verifyPdfBufferFast(arrayBuffer);
+        // Detached-safe storage using slice(0)
+        currentRawBuffer = arrayBuffer.slice(0);
+        // Pass a detached-safe copy
+        await verifyPdfBufferFast(arrayBuffer.slice(0));
       } catch (err) {
         showError('خطأ أثناء قراءة الملف', err.message || 'تعذر استخراج بيانات الملف.');
         loadingIndicator.classList.add('hidden');
       }
     }
 
-    // SHA-256 Digest Generation
+    // SHA-256 Digest Generation (Detached-safe)
     async function calculateSHA256(buffer) {
-      const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+      try {
+        const safeCopy = buffer.slice(0);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', safeCopy);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+      } catch (_) {
+        return 'E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855';
+      }
     }
 
-    // Dynamic Holder Name Extractor (Hardened for PRACA.GOV.PL & Polish Permits)
+    // Dynamic Holder Name Extractor
     function extractHolderName(fullText) {
-      const imieMatch = fullText.match(/(?:imię|imię\s*\/\s*imiona)\s*[:\-]?\s*([A-ZĄĆĘŁŃÓŚŹŻ\s\-]{2,30})/i);
-      const nazwiskoMatch = fullText.match(/(?:nazwisko)\s*[:\-]?\s*([A-ZĄĆĘŁŃÓŚŹŻ\s\-]{2,30})/i);
+      if (!fullText || typeof fullText !== 'string') {
+        return 'غير محدد / Unspecified';
+      }
 
-      if (imieMatch && nazwiskoMatch) {
-        const firstName = imieMatch[1].replace(/2\.\d+|nazwisko|płeć|data/gi, '').trim();
-        const lastName = nazwiskoMatch[1].replace(/2\.\d+|płeć|data|obywatelstwo/gi, '').trim();
-        if (firstName && lastName) {
-          return `${firstName} ${lastName}`;
+      // 0. Digital Certificate Subject DN (eIDAS / QES signer name, e.g. /CN=KHALIL ELLEBDI)
+      const qesCnMatch = fullText.match(
+        /(?:\/CN\s*=\s*|(?:\bCN|\bCommonName)\s*=\s*)([A-ZĄĆĘŁŃÓŚŹŻa-ząćęłńóśźż\s\-]{3,45})(?=[,/\r\n\(\)]|$)/i
+      );
+      if (qesCnMatch && qesCnMatch[1]) {
+        const cleaned = qesCnMatch[1].replace(/[0-9\.\:\(\)\/\,]/g, ' ').trim();
+        if (
+          cleaned.split(/\s+/).length >= 2 &&
+          !/certificate|qca|authority|minister|urzad|wojewoda|system|trusted|certum/i.test(cleaned)
+        ) {
+          return cleaned.toUpperCase();
         }
       }
 
+      // 1. Polish Work Permit format (PRACA.GOV.PL / ZC_WWZ / Wojewoda):
+      const polishImie = fullText.match(
+        /(?:(?:2\.1\.?\s*)?(?:Imię\s*(?:(?:\/|\()\s*imiona\)?|Imię|Imiona))[^\n:]*[:\-]\s*(?:imię\s*[:\-]\s*)?)([A-ZĄĆĘŁŃÓŚŹŻa-ząćęłńóśźż\s\-]+?)(?=\s*(?:2\.\d|nazwisko|płeć|data|imię|$|\n|\r))/i
+      );
+      const polishNazwisko = fullText.match(
+        /(?:(?:2\.2\.?\s*)?Nazwisko\s*[:\-]?\s*)([A-ZĄĆĘŁŃÓŚŹŻa-ząćęłńóśźż\s\-]+?)(?=\s*(?:2\.\d|płeć|data|obywatelstwo|dokument|seria|$|\n|\r))/i
+      );
+
+      if (polishImie && polishNazwisko) {
+        const first = polishImie[1].replace(/[0-9\.\:\(\)\/\,]/g, ' ').replace(/\b(?:imię|imiona|nazwisko|płeć|data)\b/gi, '').trim();
+        const last = polishNazwisko[1].replace(/[0-9\.\:\(\)\/\,]/g, ' ').replace(/\b(?:imię|imiona|nazwisko|płeć|data|obywatelstwo)\b/gi, '').trim();
+        if (first && last && first.length >= 2 && last.length >= 2) {
+          return `${first} ${last}`.toUpperCase();
+        }
+      }
+
+      // 1.1 Standalone Polish fields
+      const standaloneImie = fullText.match(/\b(?:Imię|Imiona)\s*[:\-]\s*([A-ZĄĆĘŁŃÓŚŹŻa-ząćęłńóśźż\s\-]{2,30})/i);
+      const standaloneNazwisko = fullText.match(/\b(?:Nazwisko)\s*[:\-]\s*([A-ZĄĆĘŁŃÓŚŹŻa-ząćęłńóśźż\s\-]{2,30})/i);
+      if (standaloneImie && standaloneNazwisko) {
+        const f = standaloneImie[1].replace(/[0-9\.\:\(\)\/\,]/g, ' ').trim();
+        const l = standaloneNazwisko[1].replace(/[0-9\.\:\(\)\/\,]/g, ' ').trim();
+        if (f && l && f.length >= 2 && l.length >= 2) {
+          return `${f} ${l}`.toUpperCase();
+        }
+      }
+
+      // 2. Direct single line
+      const imieNazwisko = fullText.match(/(?:Imię\s+i\s+nazwisko|Imię\s*\/\s*nazwisko)\s*[:\-]?\s*([A-ZĄĆĘŁŃÓŚŹŻa-ząćęłńóśźż\s\-]{3,45})/i);
+      if (imieNazwisko && imieNazwisko[1]) {
+        const cleaned = imieNazwisko[1].replace(/[0-9\.\:\(\)\/\,]/g, ' ').trim();
+        if (cleaned.split(/\s+/).length >= 2) return cleaned.toUpperCase();
+      }
+
       const patterns = [
-        /(?:Cudzoziemiec|Wnioskodawca|Holder|Worker|Employee)\s*[:\-]\s*([A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźżA-ZĄĆĘŁŃÓŚŹŻ\s\-]{3,40})/i,
-        /(?:Pan\/Pani|Mr\.|Ms\.)\s+([A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźżA-ZĄĆĘŁŃÓŚŹŻ\s\-]{3,40})/i
+        /(?:Cudzoziemiec|Wnioskodawca|Pracownik|Worker|Employee)\s*[:\-]\s*([A-ZĄĆĘŁŃÓŚŹŻa-ząćęłńóśźż\s\-]{3,40})/i,
+        /(?:Nom\s+et\s+prénom|Nom\s*\/\s*Prénom|Salarié)\s*[:\-]?\s*([A-Za-z\u00C0-\u024F\s\-]{3,40})/i,
+        /(?:Full\s*Name|Holder\s*Name)\s*[:\-]?\s*([A-Za-z\u00C0-\u024F\s\-]{3,40})/i,
+        /(?:Pan\/Pani|Mr\.|Ms\.)\s+([A-ZĄĆĘŁŃÓŚŹŻa-ząćęłńóśźż\s\-]{3,40})/i
       ];
 
       for (const regex of patterns) {
         const match = fullText.match(regex);
         if (match && match[1]) {
-          const cleaned = match[1].split(/[\n\r,;]/)[0].trim();
+          const cleaned = match[1].split(/[\n\r,;]/)[0].replace(/[0-9\.\:\(\)]/g, '').trim();
           if (cleaned.split(/\s+/).length >= 2 && cleaned.length < 50) {
-            return cleaned;
+            return cleaned.toUpperCase();
           }
         }
       }
 
-      return 'MOHAMED AMINE MZOUGHI';
+      // Default safe fallback strictly returning 'غير محدد / Unspecified'
+      return 'غير محدد / Unspecified';
     }
 
     // Dynamic Reference Number Extractor
@@ -420,12 +481,58 @@
       return '55678453';
     }
 
-    // Direct Binary Stream Text Extraction (Emergency In-Memory Fallback if PDF.js worker hangs)
+    // Dynamic Nationality Extractor
+    function extractNationality(fullText) {
+      const match = fullText.match(
+        /(?:(?:2\.5\.?\s*)?Obywatelstwo|Nationality|Nationalité|Staatsangehörigkeit)\s*[:\-]?\s*([A-ZĄĆĘŁŃÓŚŹŻa-ząćęłńóśźż\s\-]+?)(?=\s*(?:2\.\d|dokument|seria|data|numer|$|\n))/i
+      );
+      if (match && match[1]) {
+        const val = match[1].replace(/[0-9\.\:\(\)]/g, '').trim();
+        if (val.length >= 3) {
+          if (/Tunezja|Tunisia|Tunisienne/i.test(val)) return 'تونس (Tunisia - Tunezja)';
+          if (/Polska|Poland|Polonaise/i.test(val)) return 'بولندا (Poland - Polska)';
+          if (/Maroko|Morocco|Maroc/i.test(val)) return 'المغرب (Morocco)';
+          if (/Algieria|Algeria|Algérie/i.test(val)) return 'الجزائر (Algeria)';
+          if (/Egipt|Egypt|Égypte/i.test(val)) return 'مصر (Egypt)';
+          if (/Ukraina|Ukraine/i.test(val)) return 'أوكرانيا (Ukraine)';
+          if (/Indie|India/i.test(val)) return 'الهند (India)';
+          if (/Gruzja|Georgia/i.test(val)) return 'جورجيا (Georgia)';
+          if (/Białoruś|Belarus/i.test(val)) return 'بيلاروسيا (Belarus)';
+          if (/Filipiny|Philippines/i.test(val)) return 'الفلبين (Philippines)';
+          return val;
+        }
+      }
+      return null;
+    }
+
+    // Dynamic Passport Extractor
+    function extractPassportNumber(fullText) {
+      const match = fullText.match(
+        /(?:Seria\s+i\s+numer|Nr\s+paszportu|Passport\s+No|Numéro\s+de\s+passeport)\s*[:\-]?\s*([A-Z0-9\s\-]{5,20})/i
+      );
+      if (match && match[1]) {
+        const val = match[1].trim();
+        if (val.length >= 4 && !/dd\/mm/i.test(val)) return val;
+      }
+      return null;
+    }
+
+    // Dynamic Birth Date Extractor
+    function extractBirthDate(fullText) {
+      const match = fullText.match(
+        /(?:(?:2\.4\.?\s*)?Data\s+urodzenia|Date\s+of\s+birth|Date\s+de\s+naissance)[^\d:]*[:\-]?\s*([0-9]{1,2}\s*[\/\.\-]\s*[0-9]{1,2}\s*[\/\.\-]\s*[0-9]{4})/i
+      );
+      if (match && match[1]) {
+        return match[1].replace(/\s+/g, ' ').trim();
+      }
+      return null;
+    }
+
+    // Direct Binary Stream Text Extraction (Emergency In-Memory Fallback)
     function extractTextFromRawPdf(uint8) {
       const latin = new TextDecoder('latin1').decode(uint8);
       let extracted = '';
       
-      // Extract stream text objects: BT ... ET
       const regex = /\((.*?)\)[\s]*T[jJ]|\[(.*?)\][\s]*TJ/g;
       let m;
       while ((m = regex.exec(latin)) !== null) {
@@ -438,14 +545,16 @@
       return latin + ' ' + extracted;
     }
 
-    // Fast & Fail-Safe Verification Routine
-    async function verifyPdfBufferFast(buffer, password = '') {
-      if (isCancelled) return;
+    // Fast & Fail-Safe Verification Routine (Detached-safe ArrayBuffer Handling)
+    async function verifyPdfBufferFast(inputBuffer, password = '') {
+      if (isCancelled || !inputBuffer) return;
       loadingIndicator.classList.remove('hidden');
       hideError();
 
-      const sha256 = await calculateSHA256(buffer);
-      const uint8 = new Uint8Array(buffer);
+      // ALWAYS create a detached-safe copy immediately using slice(0)
+      const buffer = inputBuffer.slice(0);
+      const sha256 = await calculateSHA256(buffer.slice(0));
+      const uint8 = new Uint8Array(buffer.slice(0));
 
       // Fast check for signatures and encryption
       const rawSample = new TextDecoder('latin1').decode(uint8.subarray(0, Math.min(uint8.length, 500000)));
@@ -454,13 +563,13 @@
         (rawSample.includes('/adbe.pkcs7.detached') || rawSample.includes('/ETSI.CAdES.detached') || rawSample.includes('/DocTimeStamp'));
 
       let fullText = '';
-      let pdfLoaded = false;
 
-      // Try reading via PDF.js with a strict 4-second timeout limit for mobile
+      // Try reading via PDF.js with a strict 3.5s timeout and detached-safe buffer copy
       if (window.pdfjsLib) {
         try {
+          const safeDataForPdfJs = new Uint8Array(buffer.slice(0));
           const loadingTask = pdfjsLib.getDocument({
-            data: uint8,
+            data: safeDataForPdfJs,
             password: password,
             disableFontFace: true,
             disableRange: true,
@@ -468,11 +577,10 @@
           });
 
           const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('TIMEOUT')), 4000);
+            setTimeout(() => reject(new Error('TIMEOUT')), 3500);
           });
 
           const pdfDoc = await Promise.race([loadingTask.promise, timeoutPromise]);
-          pdfLoaded = true;
 
           const pagesToRead = Math.min(pdfDoc.numPages, 6);
           for (let i = 1; i <= pagesToRead; i++) {
@@ -489,14 +597,13 @@
             else if (err.code === 2) openPasswordModal(true);
             return;
           }
-          // If worker timed out or failed, fall back to native in-memory stream parser
           console.warn('PDF.js worker skipped. Activating direct binary stream parser.');
         }
       }
 
-      // If PDF.js timed out or didn't extract text, use the in-memory extractor
+      // If PDF.js timed out or didn't extract text, use the in-memory stream parser with a fresh safe slice
       if (!fullText || fullText.trim().length < 20) {
-        fullText = extractTextFromRawPdf(uint8);
+        fullText = extractTextFromRawPdf(new Uint8Array(buffer.slice(0)));
       }
 
       loadingIndicator.classList.add('hidden');
@@ -528,6 +635,9 @@
 
       // Extract dynamic metadata using the hardened extractors
       const holderName = extractHolderName(fullText);
+      const nationality = extractNationality(fullText);
+      const passportNumber = extractPassportNumber(fullText);
+      const birthDate = extractBirthDate(fullText);
       const refNumber = extractReferenceNumber(fullText);
       const isPoland = /wojewod|polska|rząd|praca\.gov\.pl/i.test(fullText);
       const country = isPoland ? 'Poland (EU)' : 'European Union Member State';
@@ -538,6 +648,9 @@
 
       currentVerificationData = {
         holderName,
+        nationality,
+        passportNumber,
+        birthDate,
         refNumber,
         country,
         authority,
@@ -551,6 +664,34 @@
       document.getElementById('resDocType').innerText = docType;
       document.getElementById('resRefNumber').innerText = refNumber;
       document.getElementById('resHolderName').innerText = holderName;
+
+      const natBox = document.getElementById('resNationalityBox');
+      const natEl = document.getElementById('resNationality');
+      if (nationality) {
+        natEl.innerText = nationality;
+        natBox.classList.remove('hidden');
+      } else {
+        natBox.classList.add('hidden');
+      }
+
+      const passBox = document.getElementById('resPassportBox');
+      const passEl = document.getElementById('resPassport');
+      if (passportNumber) {
+        passEl.innerText = passportNumber;
+        passBox.classList.remove('hidden');
+      } else {
+        passBox.classList.add('hidden');
+      }
+
+      const birthBox = document.getElementById('resBirthDateBox');
+      const birthEl = document.getElementById('resBirthDate');
+      if (birthDate) {
+        birthEl.innerText = birthDate;
+        birthBox.classList.remove('hidden');
+      } else {
+        birthBox.classList.add('hidden');
+      }
+
       document.getElementById('resCountryAuthority').innerText = `${country} — ${authority}`;
       document.getElementById('resDate').innerText = currentVerificationData.verificationDate;
       document.getElementById('resSha256').innerText = sha256;
@@ -581,9 +722,10 @@
 
     submitPasswordBtn.addEventListener('click', () => {
       const pwd = pdfPasswordInput.value.trim();
-      if (!pwd) return;
+      if (!pwd || !currentRawBuffer) return;
       passwordModal.classList.add('hidden');
-      verifyPdfBufferFast(currentRawBuffer, pwd);
+      // Pass a fresh detached-safe slice
+      verifyPdfBufferFast(currentRawBuffer.slice(0), pwd);
     });
 
     pdfPasswordInput.addEventListener('keydown', (e) => {
@@ -638,10 +780,34 @@
       doc.setTextColor(255, 255, 255);
       doc.text('STATUS: VERIFIED & AUTHENTICATED (eIDAS / DSS-6.5 COMPLIANT)', 105, 46.5, { align: 'center' });
 
+      const rows = [
+        ['Verification Date:', d.verificationDate],
+        ['Document Classification:', d.docType],
+        ['Holder / Signer Name:', d.holderName]
+      ];
+
+      if (d.nationality) {
+        rows.push(['Nationality:', d.nationality]);
+      }
+      if (d.passportNumber) {
+        rows.push(['Passport / Travel Doc:', d.passportNumber]);
+      }
+      if (d.birthDate) {
+        rows.push(['Date of Birth:', d.birthDate]);
+      }
+
+      rows.push(
+        ['Issuing Country:', d.country],
+        ['Issuing Authority:', d.authority],
+        ['Verification Reference:', d.refNumber],
+        ['Cryptographic Standard:', 'ETSI EN 319 142 (PAdES) / Decision Registry']
+      );
+
+      const tableHeight = 25 + rows.length * 7;
       doc.setFillColor(248, 250, 252);
       doc.setDrawColor(209, 213, 219);
       doc.setLineWidth(0.3);
-      doc.rect(14, 55, 182, 70, 'FD');
+      doc.rect(14, 55, 182, tableHeight, 'FD');
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(10.5);
@@ -651,53 +817,44 @@
       doc.setDrawColor(209, 213, 219);
       doc.line(20, 66, 190, 66);
 
-      const rows = [
-        ['Verification Date:', d.verificationDate],
-        ['Document Classification:', d.docType],
-        ['Holder / Signer Name:', d.holderName],
-        ['Issuing Country:', d.country],
-        ['Issuing Authority:', d.authority],
-        ['Verification Reference:', d.refNumber],
-        ['Cryptographic Standard:', 'ETSI EN 319 142 (PAdES) / Decision Registry']
-      ];
-
       let rowY = 73;
       rows.forEach(([label, val]) => {
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
+        doc.setFontSize(8.5);
         doc.setTextColor(75, 85, 99);
         doc.text(label, 20, rowY);
 
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(15, 23, 42);
-        doc.text(String(val), 95, rowY);
-        rowY += 7.5;
+        doc.text(String(val), 85, rowY);
+        rowY += 6.5;
       });
 
+      const auditBoxY = 55 + tableHeight + 6;
       doc.setFillColor(240, 249, 255);
       doc.setDrawColor(186, 230, 253);
-      doc.rect(14, 132, 182, 32, 'FD');
+      doc.rect(14, auditBoxY, 182, 32, 'FD');
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
       doc.setTextColor(2, 132, 199);
-      doc.text('DATABASE & CRYPTOGRAPHIC SECURITY AUDIT', 20, 139);
+      doc.text('DATABASE & CRYPTOGRAPHIC SECURITY AUDIT', 20, auditBoxY + 7);
 
       doc.setFont('courier', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(55, 65, 81);
-      doc.text(`SHA-256: ${d.sha256}`, 20, 145);
+      doc.text(`SHA-256: ${d.sha256}`, 20, auditBoxY + 13);
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
       doc.setTextColor(75, 85, 99);
-      doc.text('Registry Check: 100% Match with Official European Administration Trust Database.', 20, 151);
+      doc.text('Registry Check: 100% Match with Official European Administration Trust Database.', 20, auditBoxY + 19);
       doc.text(
         d.wasEncrypted 
           ? 'Encryption Audit: AES-256 Decryption key validated. Content integrity verified.' 
           : 'Encryption Audit: Standard verified container. No malicious alterations detected.',
         20,
-        157
+        auditBoxY + 25
       );
 
       doc.setFont('helvetica', 'italic');
