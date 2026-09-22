@@ -34,10 +34,10 @@
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
 
-  <!-- PDF.js CDN (Stable v3.11.174) with Robust Fallback Worker Configuration -->
+  <!-- PDF.js CDN (Stable v3.11.174) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
-  <!-- jsPDF CDN (Single-click A4 Verification Certificate Generation) -->
+  <!-- jsPDF CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <style>
@@ -260,12 +260,17 @@
       lucide.createIcons();
     }
 
-    // 2. Mobile-Hardened PDF.js Worker Configuration
-    const primaryWorkerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    const fallbackWorkerUrl = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
-
+    // 2. Inline PDF.js Worker Fallback (Bypasses CORS/Mobile Lockups Permanently)
     if (window.pdfjsLib) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = primaryWorkerUrl;
+      fetch('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js')
+        .then(response => response.text())
+        .then(workerCode => {
+          const blob = new Blob([workerCode], { type: 'text/javascript' });
+          pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+        })
+        .catch(() => {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        });
     }
 
     // DOM Elements
@@ -292,7 +297,7 @@
     let currentVerificationData = null;
     let activeLoadingTask = null;
 
-    // Strict Rejection Lists (CVs, Resumes, Welding, Trades)
+    // Strict Rejection Lists
     const REJECTED_KEYWORDS = [
       /curriculum\s+vitae/i,
       /resume/i,
@@ -371,14 +376,14 @@
       }
     }
 
-    // SHA-256 Digest Generation (Native Web Crypto API)
+    // SHA-256 Digest Generation
     async function calculateSHA256(buffer) {
       const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
     }
 
-    // Dynamic Holder Name Extractor (Hardened for PRACA.GOV.PL & Polish Permits)
+    // Dynamic Holder Name Extractor
     function extractHolderName(fullText) {
       const imieMatch = fullText.match(/(?:imię|imię\s*\/\s*imiona)\s*[:\-]?\s*([A-ZĄĆĘŁŃÓŚŹŻ\s\-]{2,30})/i);
       const nazwiskoMatch = fullText.match(/(?:nazwisko)\s*[:\-]?\s*([A-ZĄĆĘŁŃÓŚŹŻ\s\-]{2,30})/i);
@@ -424,21 +429,18 @@
       return '55678453';
     }
 
-    // Safe PDF Document Loader with Timeout and Fallbacks
-    async function loadPdfWithFallback(data, password = '', timeoutMs = 10000) {
+    // Safe PDF Loader
+    async function loadPdfWithFallback(data, password = '', timeoutMs = 12000) {
       const loadOptions = {
         data: data,
         password: password,
-        cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
-        cMapPacked: true,
-        standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/',
+        disableFontFace: true,
         stopAtErrors: false
       };
 
       const task = pdfjsLib.getDocument(loadOptions);
       activeLoadingTask = task;
 
-      // Timeout barrier so mobile browsers never get stuck
       const timeoutPromise = new Promise((_, reject) => {
         const timer = setTimeout(() => {
           try { task.destroy(); } catch (_) {}
@@ -447,22 +449,10 @@
         task.promise.finally(() => clearTimeout(timer));
       });
 
-      try {
-        return await Promise.race([task.promise, timeoutPromise]);
-      } catch (err) {
-        if (err.message === 'TIMEOUT' || err.name === 'MissingPDFException') {
-          if (pdfjsLib.GlobalWorkerOptions.workerSrc !== fallbackWorkerUrl) {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = fallbackWorkerUrl;
-            const retryTask = pdfjsLib.getDocument(loadOptions);
-            activeLoadingTask = retryTask;
-            return await retryTask.promise;
-          }
-        }
-        throw err;
-      }
+      return await Promise.race([task.promise, timeoutPromise]);
     }
 
-    // Core Verification Routine with Protective Timeout
+    // Core Verification Routine
     async function verifyPdfBufferWithTimeout(buffer, password = '') {
       loadingStatusText.innerText = 'جارٍ فحص التواقيع الرقمية والأختام المشفرة...';
       loadingIndicator.classList.remove('hidden');
@@ -471,7 +461,6 @@
       const sha256 = await calculateSHA256(buffer);
       const uint8 = new Uint8Array(buffer);
       
-      // Fast raw byte check for signatures
       const rawText = new TextDecoder('latin1').decode(uint8.subarray(0, Math.min(uint8.length, 300000)));
       let hasDigitalSignatures = rawText.includes('/ByteRange') && 
         (rawText.includes('/adbe.pkcs7.detached') || rawText.includes('/ETSI.CAdES.detached') || rawText.includes('/DocTimeStamp'));
@@ -480,7 +469,7 @@
       let wasEncrypted = false;
 
       try {
-        pdfDoc = await loadPdfWithFallback(uint8, password, 10000);
+        pdfDoc = await loadPdfWithFallback(uint8, password, 12000);
       } catch (err) {
         loadingIndicator.classList.add('hidden');
         if (err.name === 'PasswordException') {
@@ -492,7 +481,7 @@
           }
           return;
         } else if (err.message === 'TIMEOUT') {
-          showError('استغرق الفحص وقتاً طويلاً', 'تعذر فحص الوثيقة بسبب بطء اتصال شبكة المحمول أو تعذر تحميل مكتبة القراءة. يرجى إعادة المحاولة.');
+          showError('استغرق الفحص وقتاً طويلاً', 'تعذر فحص الوثيقة بسبب بطء المحرك. يرجى المحاولة مرة أخرى.');
           return;
         } else {
           showError('فشل قراءة الملف', 'الملف تالف أو لا يطابق بنية ملفات الـ PDF القياسية.');
@@ -500,7 +489,6 @@
         }
       }
 
-      // Extract text with page limit protection
       loadingStatusText.innerText = 'جارٍ مطابقة نصوص الوثيقة مع السجل الرسمي...';
       let fullText = '';
       const totalPages = Math.min(pdfDoc.numPages, 10);
@@ -516,18 +504,18 @@
 
       loadingIndicator.classList.add('hidden');
 
-      // 1. FILTERING: Reject Unofficial Files (CV, Resumes, etc.)
+      // Reject Unofficial Files
       for (const pattern of REJECTED_KEYWORDS) {
         if (pattern.test(fullText)) {
           showError(
             'وثيقة مرفوضة (REJECTED_DOCUMENT)',
-            'تم حظر المستند تلقائياً. النظام مخصص حصرياً للوثائق الحكومية المعتمدة والتصاريح الرسمية، ولا يقبل السير الذاتية أو شهادات الدورات التدريبية.'
+            'تم حظر المستند تلقائياً. النظام مخصص حصرياً للوثائق الحكومية المعتمدة والتصاريح الرسمية.'
           );
           return;
         }
       }
 
-      // 2. CHECK OFFICIALITY & QES SIGNATURES
+      // Check Officiality
       const isOfficialPermit = OFFICIAL_PERMIT_PATTERNS.some(pat => pat.test(fullText));
       if (/qualified\s+electronic\s+signature/i.test(fullText) || /certum\s+qca/i.test(fullText) || /podpis\s+zaufany/i.test(fullText)) {
         hasDigitalSignatures = true;
@@ -541,7 +529,6 @@
         return;
       }
 
-      // Extract dynamic metadata using the hardened extractors
       const holderName = extractHolderName(fullText);
       const refNumber = extractReferenceNumber(fullText);
       const isPoland = /wojewod|polska|rząd|praca\.gov\.pl/i.test(fullText);
@@ -551,7 +538,6 @@
         ? 'Qualified Electronic Signature (eIDAS / QES)' 
         : 'Official EU Work Permit Decision (Type A)';
 
-      // Save global state
       currentVerificationData = {
         holderName,
         refNumber,
@@ -563,7 +549,6 @@
         verificationDate: new Date().toISOString().split('T')[0]
       };
 
-      // Populate UI
       document.getElementById('resDocType').innerText = docType;
       document.getElementById('resRefNumber').innerText = refNumber;
       document.getElementById('resHolderName').innerText = holderName;
@@ -618,7 +603,7 @@
       errorAlert.classList.add('hidden');
     }
 
-    // jsPDF: Single-Click Official PDF Certificate Generation (Crash-Proof on Mobile & Desktop)
+    // jsPDF Certificate Generator
     downloadCertBtn.addEventListener('click', () => {
       if (!currentVerificationData) return;
 
@@ -631,12 +616,10 @@
 
       const d = currentVerificationData;
 
-      // Outer Frame
-      doc.setDrawColor(15, 23, 42); // Navy Blue
+      doc.setDrawColor(15, 23, 42);
       doc.setLineWidth(1.2);
       doc.rect(10, 10, 190, 277);
 
-      // Header Banner
       doc.setFillColor(15, 23, 42);
       doc.rect(14, 14, 182, 22, 'F');
 
@@ -649,15 +632,13 @@
       doc.setTextColor(224, 242, 254);
       doc.text('OFFICIAL EU DOCUMENT & QES VERIFICATION CERTIFICATE', 105, 30, { align: 'center' });
 
-      // Status Badge
-      doc.setFillColor(22, 163, 74); // Green
+      doc.setFillColor(22, 163, 74);
       doc.rect(14, 40, 182, 10, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9.5);
       doc.setTextColor(255, 255, 255);
       doc.text('STATUS: VERIFIED & AUTHENTICATED (eIDAS / DSS-6.5 COMPLIANT)', 105, 46.5, { align: 'center' });
 
-      // Verification Details Box
       doc.setFillColor(248, 250, 252);
       doc.setDrawColor(209, 213, 219);
       doc.setLineWidth(0.3);
@@ -665,7 +646,7 @@
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(10.5);
-      doc.setTextColor(2, 132, 199); // Sky Blue
+      doc.setTextColor(2, 132, 199);
       doc.text('VERIFICATION DETAILS', 20, 63);
 
       doc.setDrawColor(209, 213, 219);
@@ -694,7 +675,6 @@
         rowY += 7.5;
       });
 
-      // Security Audit Box
       doc.setFillColor(240, 249, 255);
       doc.setDrawColor(186, 230, 253);
       doc.rect(14, 132, 182, 32, 'FD');
@@ -721,7 +701,6 @@
         157
       );
 
-      // Official Seal Note
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8);
       doc.setTextColor(100, 116, 139);
@@ -732,7 +711,6 @@
         { align: 'center' }
       );
 
-      // Footer
       doc.setDrawColor(203, 213, 225);
       doc.line(14, 275, 196, 275);
       doc.setFont('helvetica', 'normal');
@@ -741,7 +719,6 @@
       doc.text('Europe Verify Security Engine v2026.1 - Standalone Edition', 14, 281);
       doc.text('Page 1 of 1', 196, 281, { align: 'right' });
 
-      // Save & Direct Download (Handles iOS Safari, Chrome, and desktop)
       doc.save(`Europe_Verify_Certificate_${d.refNumber}.pdf`);
     });
   </script>
