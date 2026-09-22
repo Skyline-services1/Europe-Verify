@@ -169,17 +169,11 @@
             <span id="resHolderName" class="font-bold text-white text-base">MOHAMED AMINE MZOUGHI</span>
           </div>
           <div class="bg-[#0F172A]/70 p-3.5 rounded-xl border border-slate-800">
-            <span class="text-xs text-slate-400 block mb-1">الدولة وجهة الإصدار:</span>
-            <span id="resCountryAuthority" class="font-semibold text-slate-200">Poland (EU) - Urząd Wojewódzki</span>
-          </div>
-          <div class="bg-[#0F172A]/70 p-3.5 rounded-xl border border-slate-800">
-            <span class="text-xs text-slate-400 block mb-1">تاريخ الفحص / الصلاحية:</span>
-            <span id="resDate" class="font-semibold text-slate-200">2026-09-22</span>
-          </div>
-          <div class="bg-[#0F172A]/70 p-3.5 rounded-xl border border-slate-800">
-            <span class="text-xs text-slate-400 block mb-1">حالة التشفير والحماية:</span>
-            <span id="resEncryptionStatus" class="font-semibold text-emerald-400">وثيقة قياسية تم التحقق من سلامتها</span>
-          </div>
+            // Disable external worker to force local main-thread processing for mobile
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+    }
+
         </div>
 
         <!-- Cryptographic Audit Box -->
